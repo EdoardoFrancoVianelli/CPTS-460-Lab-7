@@ -1,0 +1,103 @@
+/******************** timer.c file *************************************/
+#define LATCH_COUNT     0x00	   /* cc00xxxx, c = channel, x = any */
+#define SQUARE_WAVE     0x36	   /* ccaammmb, a = access, m = mode, b = BCD */
+
+#define TIMER_FREQ   1193182L	   /* clock frequency for timer in PC and AT */
+#define TIMER_COUNT  TIMER_FREQ/60 /* initial value for counter*/
+
+#define TIMER0       0x40
+#define TIMER_MODE   0x43
+#define TIMER_IRQ       0
+
+u16 tick;
+
+int seconds, minutes, hours;
+
+int enable_irq(u16 irq_nr)
+{
+	printf("enable_irq()\n");	
+	lock();
+	out_byte(0x21, in_byte(0x21) & ~(1 << irq_nr));
+}
+
+int timer_init()
+{
+	/* Initialize channel 0 of the 8253A timer to e.g. 60 Hz. */
+	printf("timer_init()\n");
+	set_vec(80,int80h);
+	set_vec(8,  tinth);
+	tick = seconds = minutes = hours = 0; 
+	out_byte(TIMER_MODE, SQUARE_WAVE);	// set timer to run continuously
+	out_byte(TIMER0, TIMER_COUNT);	// timer count low byte
+	out_byte(TIMER0, TIMER_COUNT >> 8);	// timer count high byte 
+	enable_irq(TIMER_IRQ); 
+}
+
+/*===================================================================*
+ *		    timer interrupt handler       		     *
+ *===================================================================*/
+ 
+void SetRow(int rw);
+void SetColumn(int col);
+int getRow();
+int getCol();
+ 
+int decrement_proc_time(){
+	int old_row, old_col, i;
+	if (running->inkmode == 1){ //if we were in user mode
+		running->time--;
+		printf("time = %d for process %d", running->time, running->pid);
+		if (running->time <= 0){ //if the time has expired
+			ClearTimer();
+			tswitch(); //switch process
+			return 1;
+		}
+	}else{
+		printf("For proc %d, inkmode = %d running_time = %d\n", running->pid, running->inkmode, running->time);
+	}		
+	return 0;
+}
+ 
+int sec_min_hr(){
+	seconds++;
+	if ((seconds %= 60) == 0){
+		minutes++;
+		if ((minutes %= 60) == 0){
+			hours++;
+			if (hours >= 24) seconds = minutes = hours = 0; 
+		}
+	}
+}
+ 
+int thandler()
+{
+	int old_row, old_col, display_loc, i = 0;
+	tick++; 
+	tick %= 60;
+	out_byte(0x20, 0x20);                // tell 8259 PIC EOI
+	if (tick == 0) {
+		sec_min_hr();	
+		//printf("about to call display\n");	
+		display_timer_bottom_right(seconds, 
+						minutes, 
+						hours, 
+						&old_row, 
+						&old_col); 
+		SetRow(old_row); 
+		SetColumn(old_col);
+		decrement_proc_time();
+	}
+}
+
+
+
+
+
+
+
+  
+
+
+
+
+
